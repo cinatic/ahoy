@@ -23,6 +23,7 @@
 
 #include "pubMqttDefs.h"
 #include "pubMqttIvData.h"
+#include "pubMqttBmeData.h"
 
 typedef std::function<void(JsonObject)> subscriptionCb;
 
@@ -61,6 +62,12 @@ class PubMqtt {
             mSendIvData.setPublishFunc([this](const char *subTopic, const char *payload, bool retained, uint8_t qos) {
                 publish(subTopic, payload, retained, true, qos);
             });
+
+            mSendBmeData.setup(utcTs);
+            mSendBmeData.setPublishFunc([this](const char *subTopic, const char *payload, bool retained, uint8_t qos) {
+                publish(subTopic, payload, retained, true, qos);
+            });
+
             mDiscovery.running = false;
 
             snprintf(mLwtTopic, MQTT_TOPIC_LEN + 5, "%s/mqtt", mCfgMqtt->topic);
@@ -92,6 +99,7 @@ class PubMqtt {
 
         void loop() {
             mSendIvData.loop();
+            mSendBmeData.loop();
 
             #if defined(ESP8266)
             mClient.loop();
@@ -111,8 +119,10 @@ class PubMqtt {
                 return; // next try in a second
             }
 
-            if(0 == mCfgMqtt->interval) // no fixed interval, publish once new data were received (from inverter)
+            if(0 == mCfgMqtt->interval) { // no fixed interval, publish once new data were received (from inverter)
                 sendIvData();
+                sendBmeData();
+            }
             else { // send mqtt data in a fixed interval
                 if(mIntervalTimeout == 0) {
                     mIntervalTimeout = mCfgMqtt->interval;
@@ -586,6 +596,10 @@ class PubMqtt {
             mLastAnyAvail = anyAvail;
         }
 
+        void sendBmeData() {
+            mSendBmeData.start((*mUptime));
+        }
+
         espMqttClient mClient;
         cfgMqtt_t *mCfgMqtt;
         #if defined(ESP8266)
@@ -594,6 +608,7 @@ class PubMqtt {
 
         HMSYSTEM *mSys;
         PubMqttIvData<HMSYSTEM> mSendIvData;
+        PubMqttBmeData mSendBmeData;
 
         uint32_t *mUtcTimestamp, *mUptime;
         uint32_t mRxCnt, mTxCnt;
